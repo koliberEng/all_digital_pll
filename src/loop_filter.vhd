@@ -50,23 +50,27 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity loop_filter is
+    generic (
+        PDW : integer := 24
+    );
     port (
         reset       : in  std_logic;
         clock       : in  std_logic;
         clock_en    : in  std_logic;
-        phase_err   : in  std_logic_vector(23 downto 0);
+        phase_err   : in  std_logic_vector(PDW-1 downto 0);
         beta        : in  std_logic_vector(3 downto 0);
         alpha       : in  std_logic_vector(3 downto 0);
-        tune_ctrl   : out std_logic_vector(23 downto 0)
+        tune_ctrl   : out std_logic_vector(PDW-1 downto 0)
     );
 end entity loop_filter;
 
 architecture rtl of loop_filter is
-    signal integrator    : signed(31 downto 0) := (others => '0');
-    signal integrator_d  : signed(31 downto 0) := (others => '0');
-    signal b1            : signed(23 downto 0);
-    signal a1            : signed(23 downto 0);
-    signal tune_ctrl_d   : signed(23 downto 0);
+    signal integrator    : signed(PDW+8-1 downto 0) := (others => '0');
+    signal integrator_d  : signed(PDW+8-1 downto 0) := (others => '0');
+    signal b1            : signed(PDW+8-1 downto 0);
+    signal a1            : signed(PDW-1 downto 0);
+    signal tune_ctrl_d   : signed(PDW+8-1 downto 0);
+    signal tune_ctrl_sat : std_logic_vector(PDW-1 downto 0);
 begin
 
     -- Integrator
@@ -81,17 +85,40 @@ begin
         end if;
     end process;
 
-    
+    -- note: limits are not checked here, an over, under flow condition can
+    -- exist
     integrator_d <= integrator + signed(phase_err);
 
-    -- Calculate b1 (beta gain) P gain 
-    b1 <= signed(phase_err) sra 0; -- to_integer(unsigned(beta));
+    -- The proportional gain is increased until it reaches the ultimate gain 
+    -- Ku at which the output of the loop starts to oscillate constantly. Ku 
+    -- and the oscillation period Tu are used to set the gains as follows:
+    -- P 	Kp=0.50 Ku; 
+    -- PI 	Kp=0.45 Ku;  Ki=0.54 Ku / Tu 
+    
+    -- Calculate a1 (alpha gain) P gain, divide by power of 2
+    -- a1 <= signed(phase_err) sra to_integer(unsigned(alpha));
+    --debug only
+    -- was performed with 34 bit tune and error 40bit accum
+    --a1 <= signed(phase_err) sla 3; --6: just oscillates; 8: not stabel;  4: stable 1000Hz
+    --a1 <= signed(phase_err) sla 3; -- works well for 1000 hz
+    --a1 <= signed(phase_err) SRA 2; -- works well for 100 hz
 
-    -- Calculate a1 (alpha gain) I gain
-    a1 <= resize(integrator_d sra 4, a1'length); -- was 6, to_integer(unsigned(alpha));
+    -- now use a 32 bit error values and 56 bit accum in nco. 
+    a1 <= signed(phase_err) SLA 7; --  10 hz ; SLA 7 works well, 8,9 ph error ocillates -1,1
 
-    -- Output tune_ctrl_d
-    tune_ctrl_d <= signed(resize((a1 + b1), tune_ctrl_d'length));
+
+
+    -- Calculate a1 (beta gain) I gain, divide by power of 2
+    --b1 <= integrator_d sla 1; -- to_integer(unsigned(beta));  -- for 1000Hz
+    --b1 <= integrator_d sla 1; -- works well for 1000Hz
+    -- b1 <= integrator_d SRA 5; -- works well for 100Hz, Tu ~8,9
+    --b1 <= integrator_d SRA 10; -- works well for 100Hz, Tu ~4
+    
+    -- use 58bit accum and 32 bit error values
+    b1 <= (others => '0');
+
+    -- Output tune_ctrl_d, not checked for over,under flow
+    tune_ctrl_d <= a1 + b1; 
 
     -- Output tune_ctrl (registered)
     process (clock)
@@ -100,10 +127,24 @@ begin
             if reset = '1' then
                 tune_ctrl <= (others => '0');
             elsif clock_en = '1' then
-                        tune_ctrl <= std_logic_vector(tune_ctrl_d);
+                        tune_ctrl <= std_logic_vector(tune_ctrl_sat);
             end if;
         end if;
     end process;
+
+
+    -- limit the tune control output to signed 24 bits max / min 
+    saturation_i : entity work.saturation
+    generic map (
+        ISIZE       =>  PDW+8 , 
+        OSIZE       =>  PDW 
+    ) port map (
+        sat_in      => std_logic_vector(tune_ctrl_d),  --IN  STD_LOGIC_VECTOR(ISIZE-1 DOWNTO 0); -- 
+        sat_out     => tune_ctrl_sat --OUT STD_LOGIC_VECTOR(OSIZE-1 DOWNTO 0)
+    ) ;
+
+
+
 
 end architecture rtl;
 

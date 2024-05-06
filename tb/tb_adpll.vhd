@@ -12,6 +12,9 @@ architecture testbench of tb_adpll is
     -- Constants
     constant CLOCK_PERIOD   : time := 6.4 ns; -- Clock period (156.25 MHz)
     constant SIM_TIME       : time := 5000 ms; -- Simulation time
+    constant TARGET_FREQ    : real := 10.0;
+    constant TARGET_PERIOD  : real := 1.0 / TARGET_FREQ ;
+    constant REF_PERIOD     : time := TARGET_PERIOD * 1.000000 sec;
 
     -- Signals
     signal reset       : std_logic := '1';
@@ -37,7 +40,9 @@ begin
         wait for 1 us; -- add delay for phase mismatch on start. 
         loop
             ref_clk <= not ref_clk;
-            wait for 500.5 us; -- 1000 Hz frequency + dFreq
+            -- not exactly 1000 hz to see pll try to match it
+            --wait for 500.005 us; -- 1000 Hz frequency + dFreq
+            wait for REF_PERIOD / 2; 
         end loop;
         --wait;
     end process;
@@ -54,6 +59,10 @@ begin
 
     -- Instantiate the DUT
     DUT : entity work.all_digital_pll
+        generic map (
+            CLOCK_FREQ  => 156.25e6,
+            TARGET_FREQ => TARGET_FREQ
+        )
         port map (
             reset   => reset,
             clock   => clock,

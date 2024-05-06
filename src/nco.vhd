@@ -51,29 +51,39 @@
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
+use ieee.math_real.all;
 
 entity nco is
     generic (
-        CLOCK_FREQ : real range 10.0e6 to 500.0e6 := 100.0e6; -- Default clock frequency
-        TARGET_FREQ: real range 0.0 to 100.0e6 := 1.0;        -- Default target frequency
-        AW         : integer := 40                            -- Default accumulator word length
+        CLOCK_FREQ  : real range 10.0e6 to 500.0e6 := 100.0e6; -- Default clock frequency
+        TARGET_FREQ : real range 0.0 to 100.0e6 := 1.0;        -- Default target frequency
+        AW          : integer := 40;                            -- Default accumulator word length
+        PDW         : integer := 32
     );
     port (
         reset     : in  std_logic;
         clock     : in  std_logic;
         nco_clk   : out std_logic;
-        tune_ctrl : in  std_logic_vector(23 downto 0)
+        tune_ctrl : in  std_logic_vector(PDW-1 downto 0)
     );
 end entity nco;
 
 architecture rtl of nco is
     signal phase_acc : signed(AW-1 downto 0) := (others => '0');
+
+    constant FREQ_CTRL_1 : real := (TARGET_FREQ*(2**AW) / CLOCK_FREQ); --AW is 56 bits and is outside the 32 bit integer width
+    constant FREQ_CTRL_H : unsigned(23 downto 0) := to_unsigned(integer(FREQ_CTRL_1 / 2**32),24);
+    constant FREQ_CTRL_L : unsigned(31 downto 0) := to_unsigned(integer(FREQ_CTRL_1 - (floor(FREQ_CTRL_1/(2**32))) * 2**32),32);
+    -- from VALUE := X - (FLOOR(ABS(X)/ABS(Y)))*ABS(Y);
     constant FREQ_CTRL : signed(AW-1 downto 0) :=
-        to_signed(integer(real(TARGET_FREQ) / real(CLOCK_FREQ) * 2.0**AW), AW);
+                signed(std_logic_vector(FREQ_CTRL_H & FREQ_CTRL_L));
+
+        --to_signed(natural(real(TARGET_FREQ) / real(CLOCK_FREQ) * 2.0**AW), AW); --AW is 56 bits and is outside the 32 bit integer width
+
+
     -- notes:
     --  freq ctrl  = (target freq)* 2^(acc word length)/ clock freq
-    --
-    -- target freq = freq ctrl * clock freq / (2^acc word lenth)
+    --  target freq = freq ctrl * clock freq / (2^acc word lenth)
     
 begin
 

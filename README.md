@@ -14,3 +14,7 @@ The PLL operates by continuously adjusting the frequency of the NCO (nco_clk) ba
 
 Additionally, the PLL includes a reset signal (reset) to initialize its internal state, and constants (CLOCK_FREQ, TARGET_FREQ, AW, BETA, ALPHA) to configure the PLL parameters such as clock frequencies and loop filter gains.
 
+There are lectures available here: https://pallen.ece.gatech.edu/Academic/ECE_6440/Summer_2003/ece_6440_su2003.htm this has several pdfs that are related to frequency synthesis and pll design. 
+
+
+
